@@ -95,7 +95,7 @@ exports.forgotPassword = (req,res) =>{
                 mg.messages().send(data,(error,body) =>{
                     if(error){
                         return res.json({
-                            error:err.message
+                            error:error.message
                         })
                     }
                     return res.json({message:'Email has been sent, Kindly follow the instructions'})
@@ -142,6 +142,35 @@ exports.resetPassword = (req,res) =>{
         return res.status(401).json({error:"Authentication error"})
     }
 }
+exports.signin = (req,res) =>{
+
+    const {email,password} = req.body;
+
+    User.findOne({email}).exec((err,user) =>{
+        if(err || !user){
+            return res.status(400).json({
+                message:'This user does not exist signup first'
+            })
+        }
+
+        if(user.password !== password){
+            return res.status(400).json({
+                error:'Email or password incorrect'
+            })
+        }
+
+        const token = jwt.sign({_id:user._id},process.env.JWT_SIGNIN_KEY,{expiresIn:'7d'})
+        const {_id,name,email} = user
+        res.json({
+            token,
+            user:{_id,name,email}
+        })
+
+    })
+}
+
+
+
 //Create user without email account activation
 // exports.signup = (req, res) => {
 //   console.log(req.body);
