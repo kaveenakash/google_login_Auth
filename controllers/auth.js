@@ -1,9 +1,14 @@
 const User = require("../models/user");
 const jwt = require("jsonwebtoken");
-const _ = require('lodash');
+const _ = require("lodash");
 const mailgun = require("mailgun-js");
 const DOMAIN = "sandbox7e27e9a9e5ab47d0a8dde9dd310588b1.mailgun.org";
 const mg = mailgun({ apiKey: process.env.MAILGUN_APIKEY, domain: DOMAIN });
+const { OAuth2Client } = require("google-auth-library");
+
+const client = new OAuth2Client(
+  "361577374258-c45jn6o7muma9cj62ptm5r7ivvtdfa8k.apps.googleusercontent.com"
+);
 
 exports.signup = (req, res) => {
   console.log(req.body);
@@ -59,7 +64,7 @@ exports.activateAccount = (req, res) => {
         let newUser = new User({ name, email, password });
         newUser.save((err, success) => {
           if (err) {
-            return res.status(400).json({ error: 'Error activating account' });
+            return res.status(400).json({ error: "Error activating account" });
           }
           res.json({
             message: "Signup success",
@@ -72,104 +77,170 @@ exports.activateAccount = (req, res) => {
   }
 };
 
-exports.forgotPassword = (req,res) =>{
-    const{email} = req.body;
+exports.forgotPassword = (req, res) => {
+  const { email } = req.body;
 
-    User.findOne({email},(err,user) =>{
-        if(err || !user){
-            return res.status(400).json({error:"User with this email does not exist"})
-        }
-        const token = jwt.sign({_id:user._id},process.env.RESET_PASSWORD_KEY,{expiresIn:'20m'});
-        const data = {
-            from:'noreply@hello.com',
-            to:email,
-            subject:'Reset password',
-            html:`
-                <h2>Please click on given link to reset your password</h2>
-                <p>${process.env.CLIENT_URL}/resetpassword/${token}</p>`
-        }
-        return user.updateOne({resetLink:token},(err,success) =>{
-            if(err){
-                return res.status(400).json({error:'reset password link error'})
-            }else{
-                mg.messages().send(data,(error,body) =>{
-                    if(error){
-                        return res.json({
-                            error:error.message
-                        })
-                    }
-                    return res.json({message:'Email has been sent, Kindly follow the instructions'})
-                })
-            }
-
-        })
-    })
-}
-
-exports.resetPassword = (req,res) =>{
-    const {resetLink,newPass} = req.body;
-
-    if(resetLink){
-
-        jwt.verify(resetLink,process.env.RESET_PASSWORD_KEY,(err,decodedData) =>{
-            if(err){
-                return res.status(401).json({
-                    error:'Incorrect token or it is expired'
-                })
-            }
-            User.findOne({resetLink},(err,user) =>{
-                if(err || !user){
-                    return res.status(401).json({error:'User with this token does not exist'})
-                }
-                const obj = {
-                    password:newPass,
-                    resetLink:''
-
-                }
-                user = _.extend(user,obj)
-
-                user.save((err,result) =>{
-                    if(err){
-                        return res.status(400).json({error:"Reset password error"})
-                    }else{
-                        return res.status(200).json({message:'Your password has been changed'})
-                    }
-                })
-            })
-        });
-
-    }else{
-        return res.status(401).json({error:"Authentication error"})
+  User.findOne({ email }, (err, user) => {
+    if (err || !user) {
+      return res
+        .status(400)
+        .json({ error: "User with this email does not exist" });
     }
-}
-exports.signin = (req,res) =>{
+    const token = jwt.sign({ _id: user._id }, process.env.RESET_PASSWORD_KEY, {
+      expiresIn: "20m",
+    });
+    const data = {
+      from: "noreply@hello.com",
+      to: email,
+      subject: "Reset password",
+      html: `
+                <h2>Please click on given link to reset your password</h2>
+                <p>${process.env.CLIENT_URL}/resetpassword/${token}</p>`,
+    };
+    return user.updateOne({ resetLink: token }, (err, success) => {
+      if (err) {
+        return res.status(400).json({ error: "reset password link error" });
+      } else {
+        mg.messages().send(data, (error, body) => {
+          if (error) {
+            return res.json({
+              error: error.message,
+            });
+          }
+          return res.json({
+            message: "Email has been sent, Kindly follow the instructions",
+          });
+        });
+      }
+    });
+  });
+};
 
-    const {email,password} = req.body;
+exports.resetPassword = (req, res) => {
+  const { resetLink, newPass } = req.body;
 
-    User.findOne({email}).exec((err,user) =>{
-        if(err || !user){
-            return res.status(400).json({
-                message:'This user does not exist signup first'
-            })
+  if (resetLink) {
+    jwt.verify(
+      resetLink,
+      process.env.RESET_PASSWORD_KEY,
+      (err, decodedData) => {
+        if (err) {
+          return res.status(401).json({
+            error: "Incorrect token or it is expired",
+          });
         }
+        User.findOne({ resetLink }, (err, user) => {
+          if (err || !user) {
+            return res
+              .status(401)
+              .json({ error: "User with this token does not exist" });
+          }
+          const obj = {
+            password: newPass,
+            resetLink: "",
+          };
+          user = _.extend(user, obj);
 
-        if(user.password !== password){
-            return res.status(400).json({
-                error:'Email or password incorrect'
-            })
-        }
+          user.save((err, result) => {
+            if (err) {
+              return res.status(400).json({ error: "Reset password error" });
+            } else {
+              return res
+                .status(200)
+                .json({ message: "Your password has been changed" });
+            }
+          });
+        });
+      }
+    );
+  } else {
+    return res.status(401).json({ error: "Authentication error" });
+  }
+};
+exports.signin = (req, res) => {
+  const { email, password } = req.body;
 
-        const token = jwt.sign({_id:user._id},process.env.JWT_SIGNIN_KEY,{expiresIn:'7d'})
-        const {_id,name,email} = user
-        res.json({
-            token,
-            user:{_id,name,email}
-        })
+  User.findOne({ email }).exec((err, user) => {
+    if (err || !user) {
+      return res.status(400).json({
+        message: "This user does not exist signup first",
+      });
+    }
 
+    if (user.password !== password) {
+      return res.status(400).json({
+        error: "Email or password incorrect",
+      });
+    }
+
+    const token = jwt.sign({ _id: user._id }, process.env.JWT_SIGNIN_KEY, {
+      expiresIn: "7d",
+    });
+    const { _id, name, email } = user;
+    res.json({
+      token,
+      user: { _id, name, email },
+    });
+  });
+};
+
+exports.googlelogin = (req, res) => {
+  const { tokenId } = req.body;
+
+  client
+    .verifyIdToken({
+      idToken: tokenId,
+      audience:
+        "361577374258-c45jn6o7muma9cj62ptm5r7ivvtdfa8k.apps.googleusercontent.com",
     })
-}
-
-
+    .then((response) => {
+      const { email_verified, name, email } = response.payload;
+      if (email_verified) {
+        User.findOne({email}).exec((err, user) => {
+          if (err) {
+            return res.status(400).json({
+              error: "Something went wrong",
+            });
+          } else {
+            if (user) {
+              const token = jwt.sign(
+                { _id: user._id },
+                process.env.JWT_SIGNIN_KEY,
+                { expiresIn: "7d" }
+                );
+                const { _id, name, email } = user;
+                
+                res.json({
+                  token,
+                  user: { _id, name, email },
+                });
+              } else {
+              
+              let password = email + process.env.JWT_SIGNIN_KEY;
+              let newUser = new User({ name, email, password });
+              newUser.save((err, data) => {
+                if (err) {
+                  return res.status(400).json({
+                    error: "Something went wrong...",
+                  });
+                }
+                const token = jwt.sign(
+                  { _id: data._id },
+                  process.env.JWT_SIGNIN_KEY,
+                  { expiresIn: "7d" }
+                );
+                const { _id, name, email } = newUser;
+                res.json({
+                  token,
+                  user: { _id, name, email },
+                });
+              });
+            }
+          }
+        });
+      }
+    });
+};
 
 //Create user without email account activation
 // exports.signup = (req, res) => {
